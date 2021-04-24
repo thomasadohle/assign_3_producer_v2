@@ -1,6 +1,9 @@
 package servlets;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.rabbitmq.client.Channel;
+import com.rabbitmq.client.Connection;
+import messaging.ConnectionPool;
 import models.Purchase;
 import org.json.JSONObject;
 
@@ -21,6 +24,14 @@ public class PurchaseServlet extends HttpServlet {
     private boolean messageWriteSuccessful = false;
     private JSONObject jsonString = new JSONObject();
     private Purchase purchase = null;
+    private ConnectionPool connectionPool;
+
+    public void init() throws ServletException {
+        connectionPool = ConnectionPool.getInstance();
+    }
+
+    public void destroy() {
+    }
 
 
     public void doPost(HttpServletRequest request, HttpServletResponse response)
@@ -60,24 +71,27 @@ public class PurchaseServlet extends HttpServlet {
         out.println(jsonString.put("message", "Valid request and successful persistence!").toString());
     }
 
-        private void writeMessage(Purchase p) throws IOException, TimeoutException {
-//        ObjectMapper mapper = new ObjectMapper();
-//        Channel channel = null;
-//        Connection connection = null;
-//        try{
-//            System.out.println("Made it into writeMessage");
-//            connection = connectionPool.borrowObject();
-//            connection = connectionPool.borrowObject();
-//            channel = connection.createChannel();
-//            channel.exchangeDeclare("purchase", "fanout");
-//            channel.basicPublish("purchase","",null,mapper.writeValueAsBytes(p));
-//            this.messageWriteSuccessful = true;
-//        } catch (Exception e) {
-//            System.out.println("Exception in writeMessage");
-//        } finally{
-//            channel.close();
-//            connectionPool.returnObject(connection);
-//        }
+    private void writeMessage(Purchase p) throws IOException, TimeoutException {
+        System.out.println("Connection Pool has " + connectionPool.getNumActive() + "active and " + connectionPool.getNumIdle() + " idle instances");
+        ObjectMapper mapper = new ObjectMapper();
+        Channel channel = null;
+        Connection connection = null;
+        try{
+            connection = connectionPool.borrowObject();
+            channel = connection.createChannel();
+            channel.exchangeDeclare("purchase", "fanout");
+            channel.basicPublish("purchase","",null,mapper.writeValueAsBytes(p));
+            this.messageWriteSuccessful = true;
+        } catch (Exception e) {
+            System.out.println("Exception in writeMessage");
+        } finally{
+            if (channel != null){
+                channel.close();
+            }
+            if (connection != null){
+                connectionPool.returnObject(connection);
+            }
+        }
     }
 
     private Purchase processRequest(HttpServletRequest request) throws IOException {
